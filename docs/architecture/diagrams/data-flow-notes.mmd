@@ -1,0 +1,62 @@
+sequenceDiagram
+    participant C as Client
+    participant API as FastAPI
+    participant Notes as Notes Module
+    participant Search as Search Module
+    participant DB as PostgreSQL
+    participant Cache as Redis
+
+    %% Create Note
+    C->>API: POST /api/v1/notes
+    API->>Notes: create_note(data)
+    Notes->>Notes: Validate input (Pydantic)
+    Notes->>Notes: Process markdown → HTML
+    Notes->>Notes: Calculate word count
+    Notes->>DB: INSERT note
+    DB-->>Notes: Note created
+    Notes->>Search: index_note(note)
+    Search->>DB: UPDATE search vector
+    Notes->>Cache: Invalidate note list cache
+    Notes-->>API: Note object
+    API-->>C: 201 Created + note
+
+    %% Update Note
+    C->>API: PUT /api/v1/notes/{id}
+    API->>Notes: update_note(id, data)
+    Notes->>DB: SELECT note by id
+    DB-->>Notes: Note record
+    Notes->>Notes: Process markdown → HTML
+    Notes->>DB: UPDATE note
+    DB-->>Notes: Note updated
+    Notes->>Search: reindex_note(note)
+    Notes->>Cache: Invalidate caches
+    Notes-->>API: Updated note
+    API-->>C: 200 OK + note
+
+    %% Search Notes
+    C->>API: GET /api/v1/search?q=query
+    API->>Cache: Check search cache
+    alt Cache hit
+        Cache-->>API: Cached results
+    else Cache miss
+        API->>Search: search_notes(query)
+        Search->>DB: SELECT with tsvector query
+        DB-->>Search: Search results
+        Search->>Cache: Cache results (2 min TTL)
+        Search-->>API: Results
+    end
+    API-->>C: 200 OK + results
+
+    %% List Notes (with pagination)
+    C->>API: GET /api/v1/notes?page=1
+    API->>Cache: Check list cache
+    alt Cache hit
+        Cache-->>API: Cached list
+    else Cache miss
+        API->>Notes: list_notes(page)
+        Notes->>DB: SELECT with pagination
+        DB-->>Notes: Paginated results
+        Notes->>Cache: Cache list (5 min TTL)
+        Notes-->>API: Results
+    end
+    API-->>C: 200 OK + paginated notes
