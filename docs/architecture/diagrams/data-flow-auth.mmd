@@ -1,0 +1,45 @@
+sequenceDiagram
+    participant C as Client
+    participant API as FastAPI
+    participant Auth as Auth Module
+    participant DB as PostgreSQL
+    participant Cache as Redis
+
+    %% Login Flow
+    C->>API: POST /api/v1/auth/login
+    API->>Auth: authenticate_user(email, password)
+    Auth->>DB: SELECT user by email
+    DB-->>Auth: User record
+    Auth->>Auth: Verify password (bcrypt)
+    Auth->>Auth: Generate JWT tokens
+    Auth->>Cache: Store refresh token
+    Auth-->>API: {access_token, refresh_token}
+    API-->>C: 200 OK + tokens
+
+    %% Authenticated Request
+    C->>API: GET /api/v1/notes
+    Note right of C: Authorization: Bearer {access_token}
+    API->>Auth: validate_token(access_token)
+    Auth->>Auth: Decode & verify JWT
+    Auth-->>API: user_id
+    API->>DB: SELECT notes WHERE user_id = ?
+    DB-->>API: Notes list
+    API-->>C: 200 OK + notes
+
+    %% Token Refresh
+    C->>API: POST /api/v1/auth/refresh
+    Note right of C: Cookie: refresh_token
+    API->>Auth: refresh_access_token(refresh_token)
+    Auth->>Cache: Validate refresh token
+    Cache-->>Auth: Valid
+    Auth->>Auth: Generate new tokens
+    Auth->>Cache: Rotate refresh token
+    Auth-->>API: {access_token, refresh_token}
+    API-->>C: 200 OK + new tokens
+
+    %% Logout
+    C->>API: POST /api/v1/auth/logout
+    API->>Auth: revoke_token(refresh_token)
+    Auth->>Cache: Delete refresh token
+    Auth-->>API: Success
+    API-->>C: 200 OK
