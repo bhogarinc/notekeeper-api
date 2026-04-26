@@ -1,0 +1,63 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--tb=short",
+    "-ra",
+]
+markers = [
+    "unit: Unit tests for isolated components",
+    "integration: Integration tests with external dependencies",
+    "slow: Tests that take longer to run",
+    "model: Tests for model business logic",
+    "service: Tests for service layer",
+    "repository: Tests for repository layer",
+    "schema: Tests for Pydantic schemas",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/migrations/*",
+    "*/alembic/*",
+    "*/venv/*",
+    "*/virtualenv/*",
+    "*/env/*",
+    "*/__pycache__/*",
+    "*/.pytest_cache/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "pass",
+    "\.\.\."
+]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 80
+
+[tool.coverage.html]
+directory = "htmlcov"
+title = "NoteKeeper Coverage Report"
+
+[tool.coverage.xml]
+output = "coverage.xml"
