@@ -1,0 +1,39 @@
+@startuml NoteKeeper Container Diagram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+Person(user, "User", "A person who wants to take and manage notes")
+
+System_Boundary(notekeeper, "NoteKeeper System") {
+    Container(web_app, "Web Application", "React + TypeScript", "User interface for note management")
+    
+    Container_Boundary(api_app, "API Application") {
+        Container(auth_module, "Auth Module", "Python/FastAPI", "Authentication & authorization")
+        Container(notes_module, "Notes Module", "Python/FastAPI", "Note CRUD operations")
+        Container(categories_module, "Categories Module", "Python/FastAPI", "Category management")
+        Container(tags_module, "Tags Module", "Python/FastAPI", "Tag management")
+        Container(search_module, "Search Module", "Python/FastAPI", "Full-text search")
+        Container(users_module, "Users Module", "Python/FastAPI", "User management")
+    }
+    
+    ContainerDb(database, "PostgreSQL", "PostgreSQL 15", "User data, notes, categories, tags, search index")
+    ContainerDb(cache, "Redis", "Redis 7", "Sessions, rate limiting, query cache")
+}
+
+System_Ext(azure_blob, "Azure Blob Storage", "File attachments")
+
+Rel(user, web_app, "Uses", "HTTPS")
+Rel(web_app, api_app, "Makes API calls", "HTTPS/JSON")
+
+Rel(auth_module, database, "Reads/Writes", "SQLAlchemy")
+Rel(notes_module, database, "Reads/Writes", "SQLAlchemy")
+Rel(categories_module, database, "Reads/Writes", "SQLAlchemy")
+Rel(tags_module, database, "Reads/Writes", "SQLAlchemy")
+Rel(search_module, database, "Reads/Writes", "SQLAlchemy")
+Rel(users_module, database, "Reads/Writes", "SQLAlchemy")
+
+Rel(auth_module, cache, "Reads/Writes", "Redis Client")
+Rel(api_app, azure_blob, "Stores files", "Azure SDK")
+
+@enduml
