@@ -1,0 +1,23 @@
+@startuml NoteKeeper Context Diagram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+Person(user, "User", "A person who wants to take and manage notes")
+
+System_Boundary(notekeeper, "NoteKeeper System") {
+    System(api, "NoteKeeper API", "FastAPI REST API for note management")
+    SystemDb(database, "PostgreSQL", "User data, notes, categories, tags")
+    SystemDb(cache, "Redis", "Session cache, rate limiting")
+}
+
+System_Ext(azure_blob, "Azure Blob Storage", "File attachments and backups")
+System_Ext(email, "Email Service", "Password reset, notifications")
+
+Rel(user, api, "Uses", "HTTPS/JSON")
+Rel(api, database, "Reads/Writes", "SQL/TCP")
+Rel(api, cache, "Reads/Writes", "Redis Protocol")
+Rel(api, azure_blob, "Stores/Retrieves", "HTTPS")
+Rel(api, email, "Sends", "HTTPS/SMTP")
+
+@enduml
