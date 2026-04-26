@@ -1,0 +1,185 @@
+# OpenTelemetry Collector Configuration for NoteKeeper
+# Receives traces, metrics, and logs from application
+# Exports to Jaeger, Prometheus, and ELK stack
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 16
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins: ["*"]
+          allowed_headers: ["*"]
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 30s
+          static_configs:
+            - targets: ['0.0.0.0:8888']
+
+  filelog:
+    include: ["/var/log/notekeeper/*.log"]
+    exclude: ["*.gz"]
+    start_at: beginning
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+      - type: severity_parser
+        parse_from: attributes.level
+        mapping:
+          debug: DEBUG
+          info: INFO
+          warning: WARNING
+          error: ERROR
+          critical: CRITICAL
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  memory_limiter:
+    limit_mib: 512
+    spike_limit_mib: 128
+    check_interval: 5s
+
+  resource:
+    attributes:
+      - key: service.name
+        value: notekeeper-api
+        action: upsert
+      - key: service.version
+        from_attribute: app.version
+        action: upsert
+      - key: deployment.environment
+        value: production
+        action: upsert
+      - key: host.name
+        from_attribute: host.name
+        action: upsert
+
+  attributes:
+    actions:
+      - key: user.email
+        action: hash
+        # Hash PII data
+      - key: jwt.token
+        action: delete
+        # Remove sensitive data
+
+  spanmetrics:
+    metrics_exporter: prometheus
+    latency_histogram_buckets: [1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
+    dimensions:
+      - name: http.method
+      - name: http.status_code
+      - name: http.route
+    dimensions_cache_size: 1000
+    aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 100000
+    expected_new_traces_per_sec: 1000
+    policies:
+      - name: errors
+        type: status_code
+        status_code: {status_codes: [ERROR]}
+      - name: latency
+        type: latency
+        latency: {threshold_ms: 1000}
+      - name: probabilistic
+        type: probabilistic
+        probabilistic: {sampling_percentage: 10}
+
+exporters:
+  # Jaeger for distributed tracing
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+  # Prometheus for metrics
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: notekeeper
+    const_labels:
+      service: notekeeper-api
+    send_timestamps: true
+    metric_expiration: 180m
+
+  # Elasticsearch for logs
+  elasticsearch:
+    endpoints: ["http://elasticsearch:9200"]
+    index: "notekeeper-logs-%{+yyyy.MM.dd}"
+    user: ${ELASTICSEARCH_USER}
+    password: ${ELASTICSEARCH_PASSWORD}
+    mapping:
+      mode: ecs
+    logs_dynamic_index:
+      enabled: true
+
+  # Azure Monitor
+  azuremonitor:
+    instrumentation_key: ${AZURE_INSTRUMENTATION_KEY}
+    max_batch_size: 100
+    max_batch_interval: 10s
+
+  # OTLP for additional backends
+  otlp/secondary:
+    endpoint: ${SECONDARY_OTLP_ENDPOINT}
+    tls:
+      insecure: false
+      cert_file: /etc/otel/certs/cert.pem
+      key_file: /etc/otel/certs/key.pem
+
+  # Debug exporter for development
+  debug:
+    verbosity: detailed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+  zpages:
+    endpoint: 0.0.0.0:55679
+  memory_ballast:
+    size_mib: 64
+
+service:
+  extensions: [health_check, pprof, zpages, memory_ballast]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling, resource, batch]
+      exporters: [jaeger, azuremonitor, otlp/secondary]
+    
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus, azuremonitor]
+    
+    logs:
+      receivers: [otlp, filelog]
+      processors: [memory_limiter, attributes, resource, batch]
+      exporters: [elasticsearch, azuremonitor]
+
+  telemetry:
+    logs:
+      level: info
+      development: false
+      sampling:
+        initial: 2
+        thereafter: 500
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
