@@ -1,0 +1,235 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "NoteKeeper API - Service Overview",
+    "tags": ["notekeeper", "api", "fastapi"],
+    "timezone": "UTC",
+    "schemaVersion": 36,
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "environment",
+          "type": "custom",
+          "query": "production,staging,development",
+          "current": {"text": "production", "value": "production"}
+        },
+        {
+          "name": "service",
+          "type": "constant",
+          "query": "notekeeper-api",
+          "current": {"text": "notekeeper-api", "value": "notekeeper-api"}
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "Prometheus",
+          "expr": "changes(app_build_info[1m]) > 0",
+          "tagKeys": "version",
+          "textFormat": "Deployed {{ version }}"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{service=\"$service\"}[5m])) by (endpoint)",
+            "legendFormat": "{{ endpoint }}"
+          }
+        ],
+        "yAxes": [{"label": "requests/sec"}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{service=\"$service\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=\"$service\"}[5m]))",
+            "legendFormat": "Error Rate"
+          }
+        ],
+        "alert": {
+          "name": "Error Rate Alert",
+          "condition": {"evaluator": {"params": [0.05], "type": "gt"}}
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Latency (p50/p95/p99)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le))",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le))",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le))",
+            "legendFormat": "p99"
+          }
+        ],
+        "yAxes": [{"label": "seconds", "min": 0}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Active Connections",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "notekeeper_db_connections_active",
+            "legendFormat": "Active DB Connections"
+          },
+          {
+            "expr": "notekeeper_db_connections_idle",
+            "legendFormat": "Idle DB Connections"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "SLO Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "(1 - (sum(rate(http_requests_total{service=\"$service\",status=~\"5..\"}[30d])) / sum(rate(http_requests_total{service=\"$service\"}[30d])))) * 100",
+            "legendFormat": "Availability %"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[30d])) by (le))",
+            "legendFormat": "Latency p99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 99},
+                {"color": "green", "value": 99.9}
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Error Budget Remaining",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "(1 - (sum(rate(http_requests_total{service=\"$service\",status=~\"5..\"}[30d])) / sum(rate(http_requests_total{service=\"$service\"}[30d])) / 0.001)) * 100",
+            "legendFormat": "Error Budget %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 25},
+                {"color": "green", "value": 50}
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Business Metrics - Notes",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(notes_created_total[1h]))",
+            "legendFormat": "Notes Created/hour"
+          },
+          {
+            "expr": "sum(rate(notes_updated_total[1h]))",
+            "legendFormat": "Notes Updated/hour"
+          },
+          {
+            "expr": "sum(rate(notes_deleted_total[1h]))",
+            "legendFormat": "Notes Deleted/hour"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20}
+      },
+      {
+        "id": 8,
+        "title": "Business Metrics - Users",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(user_logins_total[1h]))",
+            "legendFormat": "Logins/hour"
+          },
+          {
+            "expr": "sum(rate(user_registrations_total[1h]))",
+            "legendFormat": "Registrations/hour"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20}
+      },
+      {
+        "id": 9,
+        "title": "Authentication Metrics",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{service=\"$service\",endpoint=\"/api/v1/auth/login\",status=\"200\"}[5m]))",
+            "legendFormat": "Successful Logins"
+          },
+          {
+            "expr": "sum(rate(http_requests_total{service=\"$service\",status=\"401\"}[5m]))",
+            "legendFormat": "Auth Failures (401)"
+          },
+          {
+            "expr": "sum(rate(http_requests_total{service=\"$service\",status=\"403\"}[5m]))",
+            "legendFormat": "Forbidden (403)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28}
+      },
+      {
+        "id": 10,
+        "title": "Search Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(search_query_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "Search p95 Latency"
+          },
+          {
+            "expr": "sum(rate(search_queries_total[5m]))",
+            "legendFormat": "Search Queries/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28}
+      }
+    ]
+  }
+}
