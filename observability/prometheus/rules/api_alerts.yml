@@ -1,0 +1,141 @@
+# API Service Alerts for NoteKeeper
+groups:
+  - name: notekeeper_api_alerts
+    interval: 30s
+    rules:
+      # High Error Rate Alert
+      - alert: NoteKeeperHighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{service="notekeeper-api",status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="notekeeper-api"}[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: sre
+          service: notekeeper-api
+        annotations:
+          summary: "NoteKeeper API High Error Rate"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+          runbook_url: "https://wiki.internal/runbooks/notekeeper/high-error-rate"
+          dashboard_url: "https://grafana.internal/d/notekeeper-api"
+
+      # High Latency Alert (p99)
+      - alert: NoteKeeperHighLatency
+        expr: |
+          histogram_quantile(0.99, 
+            sum(rate(http_request_duration_seconds_bucket{service="notekeeper-api"}[5m])) by (le, endpoint)
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+          service: notekeeper-api
+        annotations:
+          summary: "NoteKeeper API High Latency"
+          description: "p99 latency for {{ $labels.endpoint }} is {{ $value }}s"
+          runbook_url: "https://wiki.internal/runbooks/notekeeper/high-latency"
+
+      # Service Down Alert
+      - alert: NoteKeeperAPIDown
+        expr: up{job="notekeeper-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+          service: notekeeper-api
+        annotations:
+          summary: "NoteKeeper API is Down"
+          description: "NoteKeeper API has been down for more than 2 minutes"
+          runbook_url: "https://wiki.internal/runbooks/notekeeper/service-down"
+
+      # Database Connection Pool Exhaustion
+      - alert: NoteKeeperDBConnectionPoolExhausted
+        expr: |
+          (notekeeper_db_connections_active / notekeeper_db_connections_max) > 0.85
+        for: 3m
+        labels:
+          severity: critical
+          team: sre
+          service: notekeeper-api
+        annotations:
+          summary: "Database Connection Pool Near Exhaustion"
+          description: "Connection pool utilization is {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki.internal/runbooks/notekeeper/db-connection-pool"
+
+      # JWT Authentication Failures
+      - alert: NoteKeeperAuthFailureSpike
+        expr: |
+          (
+            sum(rate(http_requests_total{service="notekeeper-api",status="401"}[5m]))
+            /
+            sum(rate(http_requests_total{service="notekeeper-api"}[5m]))
+          ) > 0.10
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+          service: notekeeper-api
+        annotations:
+          summary: "Authentication Failure Spike Detected"
+          description: "401 error rate is {{ $value | humanizePercentage }} - possible security incident"
+          runbook_url: "https://wiki.internal/runbooks/security/auth-failure-spike"
+
+      # Rate Limiting Triggered
+      - alert: NoteKeeperRateLimitingActive
+        expr: |
+          sum(rate(http_requests_total{service="notekeeper-api",status="429"}[1m])) > 0
+        for: 1m
+        labels:
+          severity: info
+          team: sre
+          service: notekeeper-api
+        annotations:
+          summary: "Rate Limiting Active"
+          description: "Rate limiting is being applied to requests"
+
+      # Memory Usage High
+      - alert: NoteKeeperHighMemoryUsage
+        expr: |
+          (process_resident_memory_bytes{job="notekeeper-api"} / 
+           container_spec_memory_limit_bytes{container="notekeeper-api"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+          service: notekeeper-api
+        annotations:
+          summary: "NoteKeeper High Memory Usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      # CPU Usage High
+      - alert: NoteKeeperHighCPUUsage
+        expr: |
+          rate(process_cpu_seconds_total{job="notekeeper-api"}[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+          service: notekeeper-api
+        annotations:
+          summary: "NoteKeeper High CPU Usage"
+          description: "CPU usage is above 80%"
+
+      # Note Creation Rate Anomaly
+      - alert: NoteKeeperNoteCreationDrop
+        expr: |
+          (
+            sum(rate(notes_created_total[1h]))
+            /
+            sum(rate(notes_created_total[1h] offset 1d))
+          ) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+          team: product
+          service: notekeeper-api
+        annotations:
+          summary: "Note Creation Rate Dropped"
+          description: "Note creation is 50% below normal levels"
