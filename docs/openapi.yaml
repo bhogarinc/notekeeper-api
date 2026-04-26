@@ -2,57 +2,123 @@ openapi: 3.0.3
 info:
   title: NoteKeeper API
   description: |
-    A secure note-taking REST API application with categories, tags, 
-    full-text search, and markdown support.
+    A secure, feature-rich note-taking REST API with full-text search, markdown support,
+    categories, tags, and JWT authentication. Designed for scalability and production use.
+    
+    ## Features
+    - **Note Management**: Create, read, update, delete notes with markdown support
+    - **Organization**: Categories and tags for note organization
+    - **Search**: Full-text search with advanced filtering
+    - **Archiving**: Soft delete and archive functionality
+    - **Pinning**: Pin important notes to the top
+    - **Authentication**: JWT-based secure authentication
+    - **Pagination**: Efficient pagination for large datasets
+    
+    ## Rate Limits
+    - Anonymous: 100 requests/hour
+    - Authenticated: 1000 requests/hour
+    - Premium: 10000 requests/hour
   version: 1.0.0
   contact:
     name: NoteKeeper Support
-    email: support@notekeeper.app
+    email: api-support@notekeeper.io
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 
 servers:
   - url: https://notekeeper-bhogarai.azurewebsites.net/api/v1
-    description: Production server
+    description: Production server (Azure App Service)
+  - url: https://staging-notekeeper.azurewebsites.net/api/v1
+    description: Staging server
   - url: http://localhost:8000/api/v1
-    description: Development server
+    description: Local development server
 
 security:
   - BearerAuth: []
 
+tags:
+  - name: Authentication
+    description: User registration, login, and token management
+  - name: Users
+    description: User profile management
+  - name: Notes
+    description: Note CRUD operations and management
+  - name: Categories
+    description: Category management for organizing notes
+  - name: Tags
+    description: Tag management for note classification
+  - name: Search
+    description: Full-text search and advanced filtering
+
 paths:
+  # ==================== AUTHENTICATION ====================
   /auth/register:
     post:
+      tags: [Authentication]
       summary: Register a new user
-      tags:
-        - Authentication
-      security: []
+      description: Create a new user account with email verification
+      security: []  # No authentication required
+      operationId: registerUser
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserCreate'
+              $ref: '#/components/schemas/UserRegistration'
+            examples:
+              newUser:
+                summary: New user registration
+                value:
+                  email: "john.doe@example.com"
+                  password: "SecurePass123!"
+                  full_name: "John Doe"
+                  username: "johndoe"
       responses:
         '201':
-          description: User created successfully
+          description: User registered successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: '#/components/schemas/UserRegistrationResponse'
+              example:
+                success: true
+                message: "User registered successfully. Please verify your email."
+                data:
+                  id: "550e8400-e29b-41d4-a716-446655440000"
+                  email: "john.doe@example.com"
+                  full_name: "John Doe"
+                  username: "johndoe"
+                  created_at: "2024-01-15T10:30:00Z"
+                  email_verified: false
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
 
   /auth/login:
     post:
-      summary: Login user
-      tags:
-        - Authentication
-      security: []
+      tags: [Authentication]
+      summary: User login
+      description: Authenticate user and receive JWT tokens
+      security: []  # No authentication required
+      operationId: loginUser
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LoginRequest'
+              $ref: '#/components/schemas/UserLogin'
+            examples:
+              loginRequest:
+                summary: User login
+                value:
+                  email: "john.doe@example.com"
+                  password: "SecurePass123!"
       responses:
         '200':
           description: Login successful
@@ -60,122 +126,577 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
+              example:
+                success: true
+                message: "Login successful"
+                data:
+                  access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  refresh_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  token_type: "Bearer"
+                  expires_in: 3600
+                  user:
+                    id: "550e8400-e29b-41d4-a716-446655440000"
+                    email: "john.doe@example.com"
+                    full_name: "John Doe"
+                    username: "johndoe"
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Account locked or email not verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error:
+                  code: "ACCOUNT_LOCKED"
+                  message: "Account is locked. Please contact support."
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
 
   /auth/refresh:
     post:
+      tags: [Authentication]
       summary: Refresh access token
-      tags:
-        - Authentication
+      description: Get a new access token using a valid refresh token
+      security: []  # No authentication required
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
       responses:
         '200':
-          description: Token refreshed
+          description: Token refreshed successfully
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenRefreshResponse'
+              example:
+                success: true
+                message: "Token refreshed successfully"
+                data:
+                  access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  token_type: "Bearer"
+                  expires_in: 3600
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
   /auth/logout:
     post:
-      summary: Logout user
-      tags:
-        - Authentication
+      tags: [Authentication]
+      summary: User logout
+      description: Invalidate the current access token
+      operationId: logoutUser
       responses:
-        '204':
+        '200':
           description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                message: "Logged out successfully"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
+  /auth/me:
+    get:
+      tags: [Authentication, Users]
+      summary: Get current user profile
+      description: Retrieve the authenticated user's profile information
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+              example:
+                success: true
+                data:
+                  id: "550e8400-e29b-41d4-a716-446655440000"
+                  email: "john.doe@example.com"
+                  username: "johndoe"
+                  full_name: "John Doe"
+                  avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=johndoe"
+                  bio: "Software developer and note-taking enthusiast"
+                  timezone: "America/New_York"
+                  language: "en"
+                  email_verified: true
+                  two_factor_enabled: false
+                  created_at: "2024-01-15T10:30:00Z"
+                  updated_at: "2024-01-20T14:22:00Z"
+                  preferences:
+                    default_view: "grid"
+                    theme: "dark"
+                    auto_save: true
+                    markdown_preview: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/forgot-password:
+    post:
+      tags: [Authentication]
+      summary: Request password reset
+      description: Send password reset email to user
+      security: []  # No authentication required
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "john.doe@example.com"
+      responses:
+        '200':
+          description: Password reset email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                message: "If an account exists, a password reset email has been sent."
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Reset password
+      description: Reset password using token from email
+      security: []  # No authentication required
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                  description: Password reset token from email
+                new_password:
+                  type: string
+                  minLength: 8
+                  format: password
+                  description: New password
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/verify-email:
+    post:
+      tags: [Authentication]
+      summary: Verify email address
+      description: Verify email using token sent during registration
+      security: []  # No authentication required
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: Email verification token
+      responses:
+        '200':
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # ==================== USERS ====================
+  /users/profile:
+    get:
+      tags: [Users]
+      summary: Get user profile
+      description: Retrieve detailed user profile
+      operationId: getUserProfile
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    patch:
+      tags: [Users]
+      summary: Update user profile
+      description: Update user profile information
+      operationId: updateUserProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdate'
+            examples:
+              updateProfile:
+                summary: Update profile
+                value:
+                  full_name: "John Doe Jr."
+                  bio: "Full-stack developer passionate about productivity"
+                  timezone: "America/Los_Angeles"
+                  language: "en"
+                  preferences:
+                    theme: "light"
+                    default_view: "list"
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /users/change-password:
+    post:
+      tags: [Users]
+      summary: Change password
+      description: Change user password (requires current password)
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                  format: password
+                new_password:
+                  type: string
+                  format: password
+                  minLength: 8
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/avatar:
+    post:
+      tags: [Users]
+      summary: Upload avatar
+      description: Upload user profile picture
+      operationId: uploadAvatar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file (JPG, PNG, max 5MB)
+      responses:
+        '200':
+          description: Avatar uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      avatar_url:
+                        type: string
+                        format: uri
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+
+    delete:
+      tags: [Users]
+      summary: Remove avatar
+      description: Delete user profile picture
+      operationId: deleteAvatar
+      responses:
+        '200':
+          description: Avatar removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/stats:
+    get:
+      tags: [Users]
+      summary: Get user statistics
+      description: Get user's note statistics and usage metrics
+      operationId: getUserStats
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserStats'
+              example:
+                success: true
+                data:
+                  total_notes: 156
+                  total_categories: 12
+                  total_tags: 34
+                  pinned_notes: 5
+                  archived_notes: 23
+                  notes_created_this_month: 18
+                  storage_used_mb: 45.2
+                  storage_limit_mb: 1000
+                  last_activity: "2024-01-20T14:22:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==================== NOTES ====================
   /notes:
     get:
+      tags: [Notes]
       summary: List notes
-      tags:
-        - Notes
+      description: |
+        Retrieve paginated list of notes with optional filtering.
+        Supports filtering by category, tags, pinned status, and archive status.
+      operationId: listNotes
       parameters:
-        - name: q
-          in: query
-          schema:
-            type: string
-          description: Search query
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - $ref: '#/components/parameters/SortFieldParam'
+        - $ref: '#/components/parameters/SortOrderParam'
         - name: category_id
           in: query
+          description: Filter by category ID
           schema:
             type: string
             format: uuid
+        - name: tag_ids
+          in: query
+          description: Filter by tag IDs (comma-separated)
+          schema:
+            type: string
+            example: "tag-1,tag-2,tag-3"
         - name: is_pinned
           in: query
+          description: Filter by pinned status
           schema:
             type: boolean
         - name: is_archived
           in: query
+          description: Filter by archive status
           schema:
             type: boolean
             default: false
-        - name: cursor
+        - name: search
           in: query
+          description: Quick search in title and content
           schema:
             type: string
-        - name: limit
+        - name: created_after
           in: query
+          description: Filter by creation date (ISO 8601)
           schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 20
+            type: string
+            format: date-time
+        - name: created_before
+          in: query
+          description: Filter by creation date (ISO 8601)
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
-          description: List of notes
+          description: Notes retrieved successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedNotesResponse'
+                $ref: '#/components/schemas/NoteListResponse'
+              example:
+                success: true
+                data:
+                  items:
+                    - id: "note-1"
+                      title: "Project Ideas"
+                      content: "## Web App Ideas\n\n1. Task Manager\n2. Habit Tracker\n3. Budget Planner"
+                      content_preview: "## Web App Ideas 1. Task Manager 2. Habit Tracker..."
+                      is_pinned: true
+                      is_archived: false
+                      category:
+                        id: "cat-1"
+                        name: "Development"
+                        color: "#3B82F6"
+                      tags:
+                        - id: "tag-1"
+                          name: "ideas"
+                          color: "#10B981"
+                        - id: "tag-2"
+                          name: "web-dev"
+                          color: "#8B5CF6"
+                      created_at: "2024-01-15T10:30:00Z"
+                      updated_at: "2024-01-20T14:22:00Z"
+                  pagination:
+                    page: 1
+                    page_size: 20
+                    total_items: 156
+                    total_pages: 8
+                    has_next: true
+                    has_previous: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
     post:
-      summary: Create a new note
-      tags:
-        - Notes
+      tags: [Notes]
+      summary: Create note
+      description: Create a new note with optional category and tags
+      operationId: createNote
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/NoteCreate'
+            examples:
+              createNote:
+                summary: Create a new note
+                value:
+                  title: "Meeting Notes - Q1 Planning"
+                  content: "# Q1 Planning Meeting\n\n## Attendees\n- John\n- Sarah\n- Mike\n\n## Agenda\n1. Review Q4 results\n2. Set Q1 goals\n3. Resource allocation"
+                  category_id: "cat-1"
+                  tag_ids: ["tag-1", "tag-2"]
+                  is_pinned: false
       responses:
         '201':
-          description: Note created
+          description: Note created successfully
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/NoteResponse'
+              example:
+                success: true
+                message: "Note created successfully"
+                data:
+                  id: "note-123"
+                  title: "Meeting Notes - Q1 Planning"
+                  content: "# Q1 Planning Meeting..."
+                  content_preview: "# Q1 Planning Meeting ## Attendees - John - Sarah..."
+                  is_pinned: false
+                  is_archived: false
+                  category:
+                    id: "cat-1"
+                    name: "Work"
+                    color: "#EF4444"
+                  tags:
+                    - id: "tag-1"
+                      name: "meetings"
+                      color: "#F59E0B"
+                    - id: "tag-2"
+                      name: "planning"
+                      color: "#3B82F6"
+                  created_at: "2024-01-20T15:30:00Z"
+                  updated_at: "2024-01-20T15:30:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Category or tag not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
-  /notes/{id}:
+  /notes/{note_id}:
     parameters:
-      - name: id
+      - name: note_id
         in: path
         required: true
+        description: Note unique identifier
         schema:
           type: string
           format: uuid
 
     get:
-      summary: Get a note by ID
-      tags:
-        - Notes
+      tags: [Notes]
+      summary: Get note details
+      description: Retrieve a single note by ID with full content
+      operationId: getNote
       responses:
         '200':
-          description: Note details
+          description: Note retrieved successfully
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/NoteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
     put:
-      summary: Update a note
-      tags:
-        - Notes
+      tags: [Notes]
+      summary: Update note
+      description: Update an existing note (full replacement)
+      operationId: updateNote
       requestBody:
         required: true
         content:
@@ -184,105 +705,408 @@ paths:
               $ref: '#/components/schemas/NoteUpdate'
       responses:
         '200':
-          description: Note updated
+          description: Note updated successfully
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/NoteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
-    delete:
-      summary: Delete a note
-      tags:
-        - Notes
-      responses:
-        '204':
-          description: Note deleted
-
-  /notes/{id}/pin:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
     patch:
-      summary: Pin or unpin a note
-      tags:
-        - Notes
+      tags: [Notes]
+      summary: Partial update note
+      description: Partially update a note (only provided fields)
+      operationId: patchNote
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NoteStatusUpdate'
+              $ref: '#/components/schemas/NotePatch'
+            examples:
+              pinNote:
+                summary: Pin a note
+                value:
+                  is_pinned: true
+              archiveNote:
+                summary: Archive a note
+                value:
+                  is_archived: true
+              updateCategory:
+                summary: Change category
+                value:
+                  category_id: "cat-2"
       responses:
         '200':
-          description: Pin status updated
-
-  /notes/{id}/archive:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    patch:
-      summary: Archive or unarchive a note
-      tags:
-        - Notes
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NoteStatusUpdate'
-      responses:
-        '200':
-          description: Archive status updated
-
-  /categories:
-    get:
-      summary: List categories
-      tags:
-        - Categories
-      responses:
-        '200':
-          description: List of categories
+          description: Note updated successfully
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CategoryResponse'
+                $ref: '#/components/schemas/NoteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Notes]
+      summary: Delete note
+      description: Permanently delete a note
+      operationId: deleteNote
+      responses:
+        '204':
+          description: Note deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notes/{note_id}/pin:
+    parameters:
+      - name: note_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
 
     post:
-      summary: Create a category
-      tags:
-        - Categories
+      tags: [Notes]
+      summary: Pin note
+      description: Pin a note to the top of the list
+      operationId: pinNote
+      responses:
+        '200':
+          description: Note pinned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Notes]
+      summary: Unpin note
+      description: Remove pin from a note
+      operationId: unpinNote
+      responses:
+        '200':
+          description: Note unpinned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notes/{note_id}/archive:
+    parameters:
+      - name: note_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      tags: [Notes]
+      summary: Archive note
+      description: Archive a note (soft delete)
+      operationId: archiveNote
+      responses:
+        '200':
+          description: Note archived successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Notes]
+      summary: Unarchive note
+      description: Restore an archived note
+      operationId: unarchiveNote
+      responses:
+        '200':
+          description: Note unarchived successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notes/{note_id}/duplicate:
+    parameters:
+      - name: note_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      tags: [Notes]
+      summary: Duplicate note
+      description: Create a copy of an existing note
+      operationId: duplicateNote
+      responses:
+        '201':
+          description: Note duplicated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notes/{note_id}/export:
+    parameters:
+      - name: note_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: format
+        in: query
+        description: Export format
+        schema:
+          type: string
+          enum: [markdown, html, pdf, txt]
+          default: markdown
+
+    get:
+      tags: [Notes]
+      summary: Export note
+      description: Export a note in various formats
+      operationId: exportNote
+      responses:
+        '200':
+          description: Note exported successfully
+          content:
+            text/markdown:
+              schema:
+                type: string
+            text/html:
+              schema:
+                type: string
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notes/bulk:
+    post:
+      tags: [Notes]
+      summary: Bulk operations
+      description: Perform bulk operations on multiple notes
+      operationId: bulkNotes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteBulkOperation'
+            examples:
+              bulkArchive:
+                summary: Archive multiple notes
+                value:
+                  operation: "archive"
+                  note_ids: ["note-1", "note-2", "note-3"]
+              bulkDelete:
+                summary: Delete multiple notes
+                value:
+                  operation: "delete"
+                  note_ids: ["note-4", "note-5"]
+              bulkUpdateCategory:
+                summary: Update category for multiple notes
+                value:
+                  operation: "update_category"
+                  note_ids: ["note-1", "note-2"]
+                  category_id: "cat-2"
+      responses:
+        '200':
+          description: Bulk operation completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      processed:
+                        type: integer
+                      succeeded:
+                        type: integer
+                      failed:
+                        type: integer
+                      errors:
+                        type: array
+                        items:
+                          type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==================== CATEGORIES ====================
+  /categories:
+    get:
+      tags: [Categories]
+      summary: List categories
+      description: Get all categories for the authenticated user
+      operationId: listCategories
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: include_note_count
+          in: query
+          description: Include note count for each category
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Categories retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListResponse'
+              example:
+                success: true
+                data:
+                  items:
+                    - id: "cat-1"
+                      name: "Work"
+                      description: "Work-related notes and tasks"
+                      color: "#EF4444"
+                      icon: "briefcase"
+                      note_count: 45
+                      created_at: "2024-01-01T00:00:00Z"
+                    - id: "cat-2"
+                      name: "Personal"
+                      description: "Personal notes and ideas"
+                      color: "#3B82F6"
+                      icon: "user"
+                      note_count: 32
+                      created_at: "2024-01-01T00:00:00Z"
+                  pagination:
+                    page: 1
+                    page_size: 20
+                    total_items: 12
+                    total_pages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Categories]
+      summary: Create category
+      description: Create a new category for organizing notes
+      operationId: createCategory
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CategoryCreate'
+            examples:
+              createCategory:
+                summary: Create new category
+                value:
+                  name: "Learning"
+                  description: "Notes from courses and tutorials"
+                  color: "#10B981"
+                  icon: "book-open"
       responses:
         '201':
-          description: Category created
+          description: Category created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Category with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
-  /categories/{id}:
+  /categories/{category_id}:
     parameters:
-      - name: id
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
+
+    get:
+      tags: [Categories]
+      summary: Get category
+      description: Get a single category by ID
+      operationId: getCategory
+      responses:
+        '200':
+          description: Category retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
     put:
-      summary: Update a category
-      tags:
-        - Categories
+      tags: [Categories]
+      summary: Update category
+      description: Update an existing category
+      operationId: updateCategory
       requestBody:
         required: true
         content:
@@ -291,59 +1115,455 @@ paths:
               $ref: '#/components/schemas/CategoryUpdate'
       responses:
         '200':
-          description: Category updated
-    delete:
-      summary: Delete a category
-      tags:
-        - Categories
-      responses:
-        '204':
-          description: Category deleted
-
-  /tags:
-    get:
-      summary: List tags
-      tags:
-        - Tags
-      responses:
-        '200':
-          description: List of tags
+          description: Category updated successfully
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TagResponse'
+                $ref: '#/components/schemas/CategoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Category with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Categories]
+      summary: Delete category
+      description: Delete a category. Notes in this category will become uncategorized.
+      operationId: deleteCategory
+      parameters:
+        - name: reassign_to
+          in: query
+          description: Category ID to reassign notes to (optional)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Category deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Cannot delete category with notes unless reassign_to is specified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== TAGS ====================
+  /tags:
+    get:
+      tags: [Tags]
+      summary: List tags
+      description: Get all tags for the authenticated user
+      operationId: listTags
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: include_note_count
+          in: query
+          description: Include note count for each tag
+          schema:
+            type: boolean
+            default: false
+        - name: sort_by
+          in: query
+          description: Sort field
+          schema:
+            type: string
+            enum: [name, created_at, note_count]
+            default: name
+      responses:
+        '200':
+          description: Tags retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagListResponse'
+              example:
+                success: true
+                data:
+                  items:
+                    - id: "tag-1"
+                      name: "ideas"
+                      color: "#F59E0B"
+                      note_count: 23
+                      created_at: "2024-01-01T00:00:00Z"
+                    - id: "tag-2"
+                      name: "meeting-notes"
+                      color: "#8B5CF6"
+                      note_count: 15
+                      created_at: "2024-01-02T00:00:00Z"
+                  pagination:
+                    page: 1
+                    page_size: 50
+                    total_items: 34
+                    total_pages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
     post:
-      summary: Create a tag
-      tags:
-        - Tags
+      tags: [Tags]
+      summary: Create tag
+      description: Create a new tag
+      operationId: createTag
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/TagCreate'
+            examples:
+              createTag:
+                summary: Create new tag
+                value:
+                  name: "urgent"
+                  color: "#EF4444"
       responses:
         '201':
-          description: Tag created
+          description: Tag created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
-  /tags/{id}:
+  /tags/{tag_id}:
     parameters:
-      - name: id
+      - name: tag_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
+
+    get:
+      tags: [Tags]
+      summary: Get tag
+      description: Get a single tag by ID
+      operationId: getTag
+      responses:
+        '200':
+          description: Tag retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Tags]
+      summary: Update tag
+      description: Update an existing tag
+      operationId: updateTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagUpdate'
+      responses:
+        '200':
+          description: Tag updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
     delete:
-      summary: Delete a tag
-      tags:
-        - Tags
+      tags: [Tags]
+      summary: Delete tag
+      description: Delete a tag. Notes with this tag will have it removed.
+      operationId: deleteTag
       responses:
         '204':
-          description: Tag deleted
+          description: Tag deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tags/merge:
+    post:
+      tags: [Tags]
+      summary: Merge tags
+      description: Merge multiple tags into one target tag
+      operationId: mergeTags
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_tag_ids, target_tag_id]
+              properties:
+                source_tag_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                target_tag_id:
+                  type: string
+                  format: uuid
+                delete_source_tags:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Tags merged successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== SEARCH ====================
+  /search:
+    get:
+      tags: [Search]
+      summary: Full-text search
+      description: |
+        Advanced full-text search across notes with filtering and highlighting.
+        Supports PostgreSQL full-text search capabilities.
+      operationId: searchNotes
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query string
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 200
+          example: "project planning meeting"
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: category_id
+          in: query
+          description: Filter by category
+          schema:
+            type: string
+            format: uuid
+        - name: tag_ids
+          in: query
+          description: Filter by tags (comma-separated)
+          schema:
+            type: string
+        - name: search_in
+          in: query
+          description: Fields to search in
+          schema:
+            type: string
+            enum: [title, content, both]
+            default: both
+        - name: date_from
+          in: query
+          description: Filter from date
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          description: Filter to date
+          schema:
+            type: string
+            format: date
+        - name: is_archived
+          in: query
+          description: Include archived notes
+          schema:
+            type: boolean
+            default: false
+        - name: highlight
+          in: query
+          description: Highlight matching terms in results
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Search results retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              example:
+                success: true
+                data:
+                  query: "project planning"
+                  total_results: 12
+                  execution_time_ms: 45
+                  results:
+                    - id: "note-1"
+                      title: "Q1 Project Planning"
+                      title_highlighted: "Q1 <mark>Project</mark> <mark>Planning</mark>"
+                      content_preview: "...discussed the <mark>project</mark> timeline and <mark>planning</mark> resources..."
+                      category:
+                        id: "cat-1"
+                        name: "Work"
+                      tags:
+                        - id: "tag-1"
+                          name: "planning"
+                      relevance_score: 0.95
+                      created_at: "2024-01-15T10:30:00Z"
+                  pagination:
+                    page: 1
+                    page_size: 20
+                    total_items: 12
+                    total_pages: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /search/suggestions:
+    get:
+      tags: [Search]
+      summary: Search suggestions
+      description: Get search suggestions as user types
+      operationId: searchSuggestions
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Partial search query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: limit
+          in: query
+          description: Maximum number of suggestions
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 10
+      responses:
+        '200':
+          description: Suggestions retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      suggestions:
+                        type: array
+                        items:
+                          type: string
+              example:
+                success: true
+                data:
+                  suggestions:
+                    - "project planning"
+                    - "project management"
+                    - "project timeline"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==================== HEALTH & STATUS ====================
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      description: API health status endpoint
+      security: []  # No authentication required
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: [ok, error]
+                      cache:
+                        type: string
+                        enum: [ok, error, disabled]
+              example:
+                status: "healthy"
+                timestamp: "2024-01-20T15:30:00Z"
+                version: "1.0.0"
+                services:
+                  database: "ok"
+                  cache: "ok"
+
+  /version:
+    get:
+      tags: [System]
+      summary: API version
+      description: Get current API version information
+      security: []  # No authentication required
+      operationId: getVersion
+      responses:
+        '200':
+          description: Version information retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  build_date:
+                    type: string
+                    format: date-time
+                  commit_hash:
+                    type: string
 
 components:
   securitySchemes:
@@ -351,29 +1571,163 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: |
+        JWT token for authentication. Include in Authorization header:
+        `Authorization: Bearer <your-jwt-token>`
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: Page number (1-based)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PageSizeParam:
+      name: page_size
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    SortFieldParam:
+      name: sort_by
+      in: query
+      description: Field to sort by
+      schema:
+        type: string
+        default: updated_at
+
+    SortOrderParam:
+      name: sort_order
+      in: query
+      description: Sort order
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
 
   schemas:
-    UserCreate:
+    # ==================== AUTHENTICATION SCHEMAS ====================
+    UserRegistration:
       type: object
-      required:
-        - email
-        - username
-        - password
+      required: [email, password, full_name, username]
       properties:
         email:
           type: string
           format: email
+          maxLength: 255
+          description: User email address
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: |
+            User password. Must contain:
+            - At least 8 characters
+            - At least one uppercase letter
+            - At least one lowercase letter
+            - At least one number
+            - At least one special character
+        full_name:
+          type: string
+          minLength: 2
+          maxLength: 100
+          description: User's full name
         username:
           type: string
           minLength: 3
           maxLength: 50
-          pattern: '^[a-zA-Z0-9_]+$'
+          pattern: '^[a-zA-Z0-9_-]+$'
+          description: Unique username (alphanumeric, underscores, hyphens)
+
+    UserRegistrationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                email:
+                  type: string
+                  format: email
+                full_name:
+                  type: string
+                username:
+                  type: string
+                created_at:
+                  type: string
+                  format: date-time
+                email_verified:
+                  type: boolean
+
+    UserLogin:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
         password:
           type: string
-          minLength: 8
-          maxLength: 128
+          format: password
 
-    UserResponse:
+    LoginResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                access_token:
+                  type: string
+                refresh_token:
+                  type: string
+                token_type:
+                  type: string
+                  default: Bearer
+                expires_in:
+                  type: integer
+                  description: Token expiration time in seconds
+                user:
+                  $ref: '#/components/schemas/UserSummary'
+
+    TokenRefresh:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          description: Valid refresh token
+
+    TokenRefreshResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                access_token:
+                  type: string
+                token_type:
+                  type: string
+                expires_in:
+                  type: integer
+
+    # ==================== USER SCHEMAS ====================
+    UserSummary:
       type: object
       properties:
         id:
@@ -381,71 +1735,175 @@ components:
           format: uuid
         email:
           type: string
+          format: email
+        full_name:
+          type: string
         username:
           type: string
-        is_active:
-          type: boolean
-        is_verified:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
 
-    LoginRequest:
+    UserProfile:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                email:
+                  type: string
+                  format: email
+                username:
+                  type: string
+                full_name:
+                  type: string
+                avatar_url:
+                  type: string
+                  format: uri
+                bio:
+                  type: string
+                  maxLength: 500
+                timezone:
+                  type: string
+                  default: "UTC"
+                language:
+                  type: string
+                  default: "en"
+                email_verified:
+                  type: boolean
+                two_factor_enabled:
+                  type: boolean
+                created_at:
+                  type: string
+                  format: date-time
+                updated_at:
+                  type: string
+                  format: date-time
+                preferences:
+                  type: object
+                  properties:
+                    default_view:
+                      type: string
+                      enum: [grid, list]
+                      default: grid
+                    theme:
+                      type: string
+                      enum: [light, dark, system]
+                      default: system
+                    auto_save:
+                      type: boolean
+                      default: true
+                    markdown_preview:
+                      type: boolean
+                      default: true
+
+    UserProfileUpdate:
       type: object
-      required:
-        - username
-        - password
       properties:
-        username:
+        full_name:
           type: string
-        password:
+          minLength: 2
+          maxLength: 100
+        bio:
           type: string
+          maxLength: 500
+        timezone:
+          type: string
+        language:
+          type: string
+          pattern: '^[a-z]{2}(-[A-Z]{2})?$'
+        preferences:
+          type: object
+          properties:
+            default_view:
+              type: string
+              enum: [grid, list]
+            theme:
+              type: string
+              enum: [light, dark, system]
+            auto_save:
+              type: boolean
+            markdown_preview:
+              type: boolean
 
-    LoginResponse:
-      type: object
-      properties:
-        access_token:
-          type: string
-        refresh_token:
-          type: string
-        token_type:
-          type: string
-          example: bearer
-        expires_in:
-          type: integer
-          example: 1800
-        user:
-          $ref: '#/components/schemas/UserResponse'
+    UserStats:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                total_notes:
+                  type: integer
+                total_categories:
+                  type: integer
+                total_tags:
+                  type: integer
+                pinned_notes:
+                  type: integer
+                archived_notes:
+                  type: integer
+                notes_created_this_month:
+                  type: integer
+                notes_created_this_week:
+                  type: integer
+                storage_used_mb:
+                  type: number
+                  format: float
+                storage_limit_mb:
+                  type: number
+                  format: float
+                last_activity:
+                  type: string
+                  format: date-time
 
-    TokenRefreshResponse:
-      type: object
-      properties:
-        access_token:
-          type: string
-        refresh_token:
-          type: string
-        token_type:
-          type: string
-        expires_in:
-          type: integer
-
+    # ==================== NOTE SCHEMAS ====================
     NoteCreate:
       type: object
-      required:
-        - title
+      required: [title]
       properties:
         title:
           type: string
+          minLength: 1
           maxLength: 200
+          description: Note title
         content:
           type: string
+          maxLength: 100000
+          description: Note content in Markdown format
         category_id:
           type: string
           format: uuid
+          description: Category ID to assign the note to
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Array of tag IDs to assign to the note
+        is_pinned:
+          type: boolean
+          default: false
+          description: Whether to pin the note
+
+    NoteUpdate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: string
+          maxLength: 100000
+        category_id:
+          type: string
+          format: uuid
+          nullable: true
         tag_ids:
           type: array
           items:
@@ -453,34 +1911,57 @@ components:
             format: uuid
         is_pinned:
           type: boolean
-          default: false
+        is_archived:
+          type: boolean
 
-    NoteUpdate:
+    NotePatch:
       type: object
       properties:
         title:
           type: string
+          minLength: 1
           maxLength: 200
         content:
           type: string
+          maxLength: 100000
         category_id:
           type: string
           format: uuid
+          nullable: true
         tag_ids:
           type: array
           items:
             type: string
             format: uuid
-
-    NoteStatusUpdate:
-      type: object
-      properties:
         is_pinned:
           type: boolean
         is_archived:
           type: boolean
 
     NoteResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Note'
+
+    NoteListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/NoteSummary'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    Note:
       type: object
       properties:
         id:
@@ -490,112 +1971,237 @@ components:
           type: string
         content:
           type: string
+        content_preview:
+          type: string
+          description: Truncated content preview (first 200 chars)
         is_pinned:
           type: boolean
         is_archived:
           type: boolean
+        category:
+          $ref: '#/components/schemas/CategorySummary'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagSummary'
+        word_count:
+          type: integer
+        reading_time_minutes:
+          type: integer
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
-        user_id:
+        created_by:
+          $ref: '#/components/schemas/UserSummary'
+
+    NoteSummary:
+      type: object
+      properties:
+        id:
           type: string
           format: uuid
-        category_id:
+        title:
           type: string
-          format: uuid
+        content_preview:
+          type: string
+        is_pinned:
+          type: boolean
+        is_archived:
+          type: boolean
+        category:
+          $ref: '#/components/schemas/CategorySummary'
         tags:
           type: array
           items:
-            $ref: '#/components/schemas/TagResponse'
+            $ref: '#/components/schemas/TagSummary'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
-    PaginatedNotesResponse:
+    NoteBulkOperation:
       type: object
+      required: [operation, note_ids]
       properties:
-        data:
+        operation:
+          type: string
+          enum: [archive, unarchive, pin, unpin, delete, update_category, update_tags]
+        note_ids:
           type: array
           items:
-            $ref: '#/components/schemas/NoteResponse'
-        pagination:
-          type: object
-          properties:
-            next_cursor:
-              type: string
-            has_more:
-              type: boolean
-            limit:
-              type: integer
-            total_count:
-              type: integer
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 100
+        category_id:
+          type: string
+          format: uuid
+          description: Required for update_category operation
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Required for update_tags operation
 
+    # ==================== CATEGORY SCHEMAS ====================
     CategoryCreate:
       type: object
-      required:
-        - name
+      required: [name]
       properties:
         name:
           type: string
+          minLength: 1
           maxLength: 50
+          description: Category name
+        description:
+          type: string
+          maxLength: 500
+          description: Category description
         color:
           type: string
           pattern: '^#[0-9A-Fa-f]{6}$'
-          default: '#6366f1'
+          default: "#3B82F6"
+          description: Hex color code for the category
         icon:
           type: string
           maxLength: 50
-        parent_id:
-          type: string
-          format: uuid
+          description: Icon name (from icon library)
 
     CategoryUpdate:
       type: object
+      required: [name]
       properties:
         name:
           type: string
+          minLength: 1
           maxLength: 50
-        color:
+        description:
           type: string
-        icon:
-          type: string
-        parent_id:
-          type: string
-          format: uuid
-
-    CategoryResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        color:
-          type: string
-        icon:
-          type: string
-        parent_id:
-          type: string
-          format: uuid
-        note_count:
-          type: integer
-
-    TagCreate:
-      type: object
-      required:
-        - name
-      properties:
-        name:
-          type: string
-          maxLength: 30
-          pattern: '^[a-zA-Z0_\-]+$'
+          maxLength: 500
         color:
           type: string
           pattern: '^#[0-9A-Fa-f]{6}$'
-          default: '#10b981'
+        icon:
+          type: string
+          maxLength: 50
+
+    CategoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Category'
+
+    CategoryListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Category'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+        note_count:
+          type: integer
+          description: Number of notes in this category
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CategorySummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          type: string
+
+    # ==================== TAG SCHEMAS ====================
+    TagCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 30
+          pattern: '^[a-z0-9-]+$'
+          description: Tag name (lowercase, alphanumeric, hyphens)
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          default: "#6B7280"
+          description: Hex color code for the tag
+
+    TagUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 30
+          pattern: '^[a-z0-9-]+$'
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
 
     TagResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Tag'
+
+    TagListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Tag'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    Tag:
       type: object
       properties:
         id:
@@ -607,37 +2213,289 @@ components:
           type: string
         note_count:
           type: integer
+          description: Number of notes with this tag
+        created_at:
+          type: string
+          format: date-time
 
-    Error:
+    TagSummary:
       type: object
       properties:
-        error:
+        id:
           type: string
-        message:
+          format: uuid
+        name:
           type: string
-        details:
+        color:
+          type: string
+
+    # ==================== SEARCH SCHEMAS ====================
+    SearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                query:
+                  type: string
+                total_results:
+                  type: integer
+                execution_time_ms:
+                  type: integer
+                results:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/SearchResult'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    SearchResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        title_highlighted:
+          type: string
+          description: Title with search terms highlighted
+        content_preview:
+          type: string
+        content_highlighted:
+          type: string
+          description: Content preview with search terms highlighted
+        category:
+          $ref: '#/components/schemas/CategorySummary'
+        tags:
           type: array
           items:
-            type: object
+            $ref: '#/components/schemas/TagSummary'
+        relevance_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        created_at:
+          type: string
+          format: date-time
+
+    # ==================== COMMON SCHEMAS ====================
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+        total_items:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+        has_next:
+          type: boolean
+        has_previous:
+          type: boolean
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: true
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              description: Additional error context
+
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            error:
+              type: object
+              properties:
+                code:
+                  type: string
+                  default: VALIDATION_ERROR
+                message:
+                  type: string
+                validation_errors:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                      message:
+                        type: string
+                      code:
+                        type: string
 
   responses:
     BadRequest:
-      description: Bad request
+      description: Bad request - invalid input
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "BAD_REQUEST"
+              message: "Invalid request parameters"
 
     Unauthorized:
-      description: Unauthorized
+      description: Unauthorized - invalid or missing authentication
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "UNAUTHORIZED"
+              message: "Authentication required. Please provide a valid token."
+
+    Forbidden:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "FORBIDDEN"
+              message: "You don't have permission to access this resource"
 
     NotFound:
       description: Resource not found
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "NOT_FOUND"
+              message: "The requested resource was not found"
+
+    Conflict:
+      description: Conflict - resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "CONFLICT"
+              message: "A resource with this identifier already exists"
+
+    ValidationError:
+      description: Validation error - invalid data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          example:
+            success: false
+            error:
+              code: "VALIDATION_ERROR"
+              message: "Validation failed"
+              validation_errors:
+                - field: "email"
+                  message: "Invalid email format"
+                  code: "invalid_email"
+                - field: "password"
+                  message: "Password must be at least 8 characters"
+                  code: "too_short"
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          description: Request limit per hour
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Remaining requests in current window
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Unix timestamp when limit resets
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "RATE_LIMIT_EXCEEDED"
+              message: "API rate limit exceeded. Please try again later."
+
+    PayloadTooLarge:
+      description: Request payload too large
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "PAYLOAD_TOO_LARGE"
+              message: "Request body exceeds maximum size limit"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred. Please try again later."
+
+# Webhook endpoints (documented but not implemented in v1)
+webhooks:
+  noteCreated:
+    post:
+      summary: Note created event
+      description: Triggered when a new note is created
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event:
+                  type: string
+                  enum: [note.created]
+                data:
+                  $ref: '#/components/schemas/Note'
