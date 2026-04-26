@@ -1,0 +1,822 @@
+openapi: 3.0.3
+info:
+  title: NoteKeeper API
+  description: |
+    A secure note-taking REST API with categories, tags, full-text search, and markdown support.
+    
+    ## Authentication
+    This API uses JWT Bearer authentication. Include the access token in the Authorization header:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+    
+    ## Rate Limiting
+    - 100 requests per minute per IP
+    - 1000 requests per hour per user
+    
+    ## Pagination
+    List endpoints use cursor-based pagination with the following parameters:
+    - `cursor`: Opaque cursor for the next page
+    - `limit`: Number of items per page (default: 20, max: 100)
+  version: 1.0.0
+  contact:
+    name: NoteKeeper Support
+    email: support@notekeeper.app
+
+servers:
+  - url: https://notekeeper-bhogarai.azurewebsites.net/api/v1
+    description: Production server
+  - url: https://notekeeper-staging.azurewebsites.net/api/v1
+    description: Staging server
+  - url: http://localhost:3000/api/v1
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ============================================
+  # Health & Status
+  # ============================================
+  /health:
+    get:
+      summary: Health check
+      description: Check if the API is running
+      security: []
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health/ready:
+    get:
+      summary: Readiness check
+      description: Check if the API and dependencies are ready
+      security: []
+      responses:
+        '200':
+          description: All systems ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          description: One or more dependencies unavailable
+
+  # ============================================
+  # Authentication
+  # ============================================
+  /auth/register:
+    post:
+      summary: Register new user
+      description: Create a new user account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email already exists
+
+  /auth/login:
+    post:
+      summary: User login
+      description: Authenticate user and receive tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      summary: User logout
+      description: Revoke current refresh token
+      responses:
+        '204':
+          description: Logout successful
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      description: Get new access token using refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Tokens refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid or expired refresh token
+
+  /auth/me:
+    get:
+      summary: Get current user
+      description: Get profile of authenticated user
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  # ============================================
+  # Notes
+  # ============================================
+  /notes:
+    get:
+      summary: List notes
+      description: Get paginated list of user's notes
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: category
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by category ID
+        - name: tag
+          in: query
+          schema:
+            type: string
+          description: Filter by tag name
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+          description: Include archived notes
+        - name: pinned
+          in: query
+          schema:
+            type: boolean
+          description: Filter by pinned status
+      responses:
+        '200':
+          description: List of notes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteListResponse'
+
+    post:
+      summary: Create note
+      description: Create a new note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNoteRequest'
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /notes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/NoteIdParam'
+
+    get:
+      summary: Get note
+      description: Get a single note by ID
+      responses:
+        '200':
+          description: Note details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: Update note
+      description: Update an existing note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNoteRequest'
+      responses:
+        '200':
+          description: Note updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete note
+      description: Soft delete a note
+      responses:
+        '204':
+          description: Note deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notes/{id}/pin:
+    parameters:
+      - $ref: '#/components/parameters/NoteIdParam'
+
+    patch:
+      summary: Toggle pin status
+      description: Pin or unpin a note
+      responses:
+        '200':
+          description: Pin status toggled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notes/{id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/NoteIdParam'
+
+    patch:
+      summary: Toggle archive status
+      description: Archive or unarchive a note
+      responses:
+        '200':
+          description: Archive status toggled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notes/search:
+    get:
+      summary: Search notes
+      description: Full-text search across note titles and content
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 200
+          description: Search query
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteListResponse'
+
+  # ============================================
+  # Categories
+  # ============================================
+  /categories:
+    get:
+      summary: List categories
+      description: Get all categories for the user
+      responses:
+        '200':
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+
+    post:
+      summary: Create category
+      description: Create a new category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+
+  /categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CategoryIdParam'
+
+    put:
+      summary: Update category
+      description: Update an existing category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+      responses:
+        '200':
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+
+    delete:
+      summary: Delete category
+      description: Delete a category (notes become uncategorized)
+      responses:
+        '204':
+          description: Category deleted
+
+  # ============================================
+  # Tags
+  # ============================================
+  /tags:
+    get:
+      summary: List tags
+      description: Get all tags for the user
+      responses:
+        '200':
+          description: List of tags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tag'
+
+    post:
+      summary: Create tag
+      description: Create a new tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTagRequest'
+      responses:
+        '201':
+          description: Tag created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+
+  /tags/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TagIdParam'
+
+    put:
+      summary: Update tag
+      description: Update an existing tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTagRequest'
+      responses:
+        '200':
+          description: Tag updated
+
+    delete:
+      summary: Delete tag
+      description: Delete a tag (removed from all notes)
+      responses:
+        '204':
+          description: Tag deleted
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CursorParam:
+      name: cursor
+      in: query
+      schema:
+        type: string
+      description: Opaque cursor for pagination
+
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+      description: Number of items per page
+
+    NoteIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Note ID
+
+    CategoryIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Category ID
+
+    TagIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Tag ID
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    # ============================================
+    # Health & Status
+    # ============================================
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        timestamp:
+          type: string
+          format: date-time
+
+    ReadinessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ready
+        checks:
+          type: object
+          properties:
+            database:
+              type: string
+              example: connected
+            cache:
+              type: string
+              example: connected
+
+    # ============================================
+    # Authentication
+    # ============================================
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 100
+        displayName:
+          type: string
+          maxLength: 100
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RefreshRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Access token expiry in seconds
+        user:
+          $ref: '#/components/schemas/User'
+
+    # ============================================
+    # User
+    # ============================================
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    # ============================================
+    # Notes
+    # ============================================
+    Note:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        contentHtml:
+          type: string
+          nullable: true
+        isPinned:
+          type: boolean
+        isArchived:
+          type: boolean
+        category:
+          $ref: '#/components/schemas/Category'
+          nullable: true
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateNoteRequest:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        content:
+          type: string
+          maxLength: 100000
+        categoryId:
+          type: string
+          format: uuid
+        tagIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    UpdateNoteRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        content:
+          type: string
+          maxLength: 100000
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        tagIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    NoteListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        pagination:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+
+    # ============================================
+    # Categories
+    # ============================================
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        noteCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateCategoryRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        description:
+          type: string
+          maxLength: 500
+
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        description:
+          type: string
+          maxLength: 500
+
+    # ============================================
+    # Tags
+    # ============================================
+    Tag:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          type: string
+          nullable: true
+        noteCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateTagRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+
+    UpdateTagRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+
+    # ============================================
+    # Error
+    # ============================================
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
