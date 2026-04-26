@@ -1,0 +1,160 @@
+# Infrastructure Alerts for NoteKeeper
+groups:
+  - name: notekeeper_infrastructure_alerts
+    interval: 30s
+    rules:
+      # PostgreSQL Primary Down
+      - alert: PostgreSQLPrimaryDown
+        expr: pg_up{job="postgresql"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: dba
+          service: postgresql
+        annotations:
+          summary: "PostgreSQL Primary is Down"
+          description: "PostgreSQL primary instance has been down for more than 2 minutes"
+          runbook_url: "https://wiki.internal/runbooks/postgresql/primary-down"
+
+      # PostgreSQL Replication Lag
+      - alert: PostgreSQLReplicationLag
+        expr: |
+          pg_replication_lag_seconds > 30
+        for: 5m
+        labels:
+          severity: warning
+          team: dba
+          service: postgresql
+        annotations:
+          summary: "PostgreSQL Replication Lag High"
+          description: "Replication lag is {{ $value }} seconds"
+
+      # PostgreSQL Connection Limit
+      - alert: PostgreSQLConnectionLimit
+        expr: |
+          (pg_stat_activity_count / pg_settings_max_connections) > 0.85
+        for: 3m
+        labels:
+          severity: critical
+          team: dba
+          service: postgresql
+        annotations:
+          summary: "PostgreSQL Near Connection Limit"
+          description: "Connection count is {{ $value | humanizePercentage }} of max"
+
+      # PostgreSQL Deadlock
+      - alert: PostgreSQLDeadlockDetected
+        expr: |
+          rate(pg_stat_database_deadlocks[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          team: dba
+          service: postgresql
+        annotations:
+          summary: "PostgreSQL Deadlock Detected"
+          description: "Deadlocks detected in database"
+
+      # Azure App Service - High Response Time
+      - alert: AzureAppServiceHighResponseTime
+        expr: |
+          azure_appservice_http_response_time > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+          service: azure-appservice
+        annotations:
+          summary: "Azure App Service High Response Time"
+          description: "Average response time is {{ $value }}s"
+
+      # Azure App Service - 5xx Errors
+      - alert: AzureAppService5xxErrors
+        expr: |
+          rate(azure_appservice_http_5xx[5m]) > 0.01
+        for: 3m
+        labels:
+          severity: critical
+          team: sre
+          service: azure-appservice
+        annotations:
+          summary: "Azure App Service 5xx Errors"
+          description: "5xx error rate is elevated"
+
+      # Azure App Service - CPU Percentage
+      - alert: AzureAppServiceHighCPU
+        expr: |
+          azure_appservice_cpu_percent > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+          service: azure-appservice
+        annotations:
+          summary: "Azure App Service High CPU"
+          description: "CPU usage is {{ $value }}%"
+
+      # Azure App Service - Memory Percentage
+      - alert: AzureAppServiceHighMemory
+        expr: |
+          azure_appservice_memory_percent > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+          service: azure-appservice
+        annotations:
+          summary: "Azure App Service High Memory"
+          description: "Memory usage is {{ $value }}%"
+
+      # Disk Space Low
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
+        for: 5m
+        labels:
+          severity: critical
+          team: sre
+          service: infrastructure
+        annotations:
+          summary: "Disk Space Low"
+          description: "Disk space is below 15%"
+
+      # Container Memory Limit
+      - alert: ContainerMemoryNearLimit
+        expr: |
+          (container_memory_working_set_bytes{container="notekeeper-api"} / 
+           container_spec_memory_limit_bytes{container="notekeeper-api"}) > 0.9
+        for: 3m
+        labels:
+          severity: critical
+          team: sre
+          service: container
+        annotations:
+          summary: "Container Memory Near Limit"
+          description: "Container memory usage is {{ $value | humanizePercentage }}"
+
+      # SSL Certificate Expiry
+      - alert: SSLCertificateExpiringSoon
+        expr: |
+          (probe_ssl_earliest_cert_expiry - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+          team: sre
+          service: security
+        annotations:
+          summary: "SSL Certificate Expiring Soon"
+          description: "Certificate expires in {{ $value | humanizeDuration }}"
+
+      # Endpoint Down
+      - alert: EndpointDown
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+          service: monitoring
+        annotations:
+          summary: "Endpoint {{ $labels.instance }} is Down"
+          description: "Endpoint has been unreachable for more than 2 minutes"
