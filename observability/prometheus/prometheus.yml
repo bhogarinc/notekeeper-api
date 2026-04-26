@@ -1,0 +1,112 @@
+# Prometheus Configuration for NoteKeeper
+# Global settings
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'notekeeper-azure'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+      timeout: 10s
+
+# Rule files for alerting
+rule_files:
+  - 'rules/api_alerts.yml'
+  - 'rules/infrastructure_alerts.yml'
+  - 'rules/business_alerts.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+
+  # FastAPI Application Metrics
+  - job_name: 'notekeeper-api'
+    static_configs:
+      - targets: ['notekeeper-api:8000']
+    scrape_interval: 15s
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+
+  # Azure App Service Metrics via Azure Monitor Exporter
+  - job_name: 'azure-app-service'
+    static_configs:
+      - targets: ['azure-exporter:9276']
+    scrape_interval: 60s
+    params:
+      subscription: ['${AZURE_SUBSCRIPTION_ID}']
+      resource_group: ['notekeeper-rg']
+
+  # PostgreSQL Metrics via postgres_exporter
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+
+  # Redis Metrics (if using Azure Cache for Redis)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+
+  # Node Exporter for VM Metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # OpenTelemetry Collector Metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']
+    scrape_interval: 30s
+
+  # Docker Container Metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s
+
+  # Blackbox Exporter for Endpoint Probing
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://notekeeper-bhogarai.azurewebsites.net/health
+          - https://notekeeper-bhogarai.azurewebsites.net/api/v1/notes
+          - https://notekeeper-bhogarai.azurewebsites.net/api/v1/categories
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+# Remote write to Azure Monitor or Thanos for long-term storage
+remote_write:
+  - url: '${THANOS_RECEIVE_URL}'
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500
+    write_relabel_configs:
+      - source_labels: [__name__]
+        regex: '.*'
+        action: keep
